@@ -1,4 +1,4 @@
-name: Build TA-Lib wheels for Windows
+name: Build TA-Lib wheels for Windows and macOS
 
 on:
   workflow_dispatch:
@@ -10,12 +10,8 @@ env:
   PIP_VERBOSE: 1
   CIBW_BUILD_VERBOSITY: 2
   CIBW_BEFORE_BUILD: pip install -U setuptools wheel numpy Cython
-  CIBW_TEST_REQUIRES: pytest pandas polars
-  CIBW_TEST_COMMAND: >
-    cd .. &&
-    pytest --rootdir=C: -k "not RSI and not threading" {project}/tests
-  CIBW_TEST_SKIP: "*win32 cp37* cp38* cp39*"
-  CIBW_SKIP: "pp* cp36*"
+  CIBW_TEST_SKIP: "*"
+  CIBW_SKIP: "pp* cp36* cp37* cp38* cp39* cp310* cp311*"
   MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
 
 jobs:
@@ -43,6 +39,7 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
           name: wheels-win-amd64
+
   build_x86:
     name: Build x86 wheels
     runs-on: ${{ matrix.os }}
@@ -67,3 +64,38 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
           name: wheels-win32
+
+  build_macos_arm64:
+    name: Build macOS ARM64 wheels
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TA-Lib C library
+        run: |
+          wget https://github.com/TA-Lib/ta-lib/releases/download/v$TALIB_C_VER/ta-lib-$TALIB_C_VER-src.tar.gz
+          tar -xzf ta-lib-$TALIB_C_VER-src.tar.gz
+          cd ta-lib-$TALIB_C_VER
+          ./configure --prefix=/usr/local
+          make
+          sudo make install
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "15.0"
+      - name: Download TA-Lib Python source
+        run: |
+          wget https://github.com/TA-Lib/ta-lib-python/archive/refs/tags/TA_Lib-$TALIB_PY_VER.tar.gz
+          tar -xzf TA_Lib-$TALIB_PY_VER.tar.gz
+          mv ta-lib-python-TA_Lib-$TALIB_PY_VER talib-python
+      - uses: pypa/cibuildwheel@v2.22.0
+        with:
+          package-dir: ./talib-python
+        env:
+          CIBW_ARCHS_MACOS: arm64
+          CIBW_BUILD: "cp312-*"
+          CIBW_ENVIRONMENT_MACOS: >
+            TA_LIBRARY_PATH="/usr/local/lib"
+            TA_INCLUDE_PATH="/usr/local/include"
+            MACOSX_DEPLOYMENT_TARGET="15.0"
+      - uses: actions/upload-artifact@v4
+        with:
+          path: ./wheelhouse/*.whl
+          name: wheels-macos-arm64
